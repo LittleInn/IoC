@@ -6,6 +6,7 @@ import com.ioc.proxy.CGLibProxyCreator;
 
 public class RunApp {
 	public RunApp() {
+		
 	}
 
 	public static void main(String[] args) throws IOException, ClassNotFoundException, InstantiationException, IllegalAccessException {
