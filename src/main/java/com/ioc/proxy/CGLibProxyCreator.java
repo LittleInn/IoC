@@ -3,6 +3,7 @@ package com.ioc.proxy;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -17,8 +18,9 @@ import net.sf.cglib.proxy.MethodProxy;
 import com.ioc.ParseClasses;
 import com.ioc.annotations.Bean;
 import com.ioc.annotations.Inject;
+import com.ioc.annotations.Provided;
 
-public class CGLibProxyCreator<T> { 
+public class CGLibProxyCreator<T> {
 
 	static List<String> packages = new ArrayList<String>(Arrays.asList(
 			"com/ioc", "com/ioc/model", "com/ioc/annotations", "com/ioc/impl",
@@ -26,8 +28,6 @@ public class CGLibProxyCreator<T> {
 
 	static Map<String, Object> globalBeansMap = new HashMap<String, Object>();
 	static Map<String, Object> globalInjectedMap = new HashMap<String, Object>();
-
-	boolean injectPresent = false;
 
 	ParseClasses parser;
 	ClassLoader contextClassLoader;
@@ -46,6 +46,16 @@ public class CGLibProxyCreator<T> {
 			for (Class<?> className : classes) {
 				loadInjectedProxy(className);
 			}
+		}
+	}
+
+	public void loadInjectedPackageClasses(String packageName)
+			throws IOException, ClassNotFoundException, InstantiationException,
+			IllegalAccessException {
+		List<Class> classes = parser
+				.getClasses(contextClassLoader, packageName);
+		for (Class<?> className : classes) {
+			loadBeanProxy(className);
 		}
 	}
 
@@ -82,6 +92,35 @@ public class CGLibProxyCreator<T> {
 		System.out.println("Global map: " + globalBeansMap);
 	}
 
+	public void loadProvidedPackageClass(String packageName)
+			throws ClassNotFoundException, IOException, InstantiationException,
+			IllegalAccessException, IllegalArgumentException,
+			InvocationTargetException {
+		List<Class> classes = parser
+				.getClasses(contextClassLoader, packageName);
+		for (Class<?> className : classes) {
+			loadProvided(className);
+		}
+
+	}
+
+	public void loadProvided(Class<?> className) throws InstantiationException,
+			IllegalAccessException, IllegalArgumentException,
+			InvocationTargetException {
+		Method[] methods = className.getMethods();
+		for (Method method : methods) {
+			if (method.isAnnotationPresent(Provided.class)) {
+				Provided annotation = method.getAnnotation(Provided.class);
+				String name = ((Provided) annotation).name();
+				System.out.println("Provided  Name: " + name);
+				getGlobalBeansMap().put(name,
+						method.invoke(className.newInstance()));
+
+			}
+		}
+		System.out.println("Global map: " + globalBeansMap);
+	}
+
 	@SuppressWarnings("unchecked")
 	public T createProxy(Class<?> className) throws ClassNotFoundException {
 
@@ -93,15 +132,15 @@ public class CGLibProxyCreator<T> {
 					MethodProxy proxy) throws Throwable {
 				Field[] fields = obj.getClass().getFields();
 				for (Field field : fields) {
-					System.out.println("FIELD: "+field.getType());
+					System.out.println("FIELD: " + field.getType());
 					if (field.isAnnotationPresent(Inject.class)) {
 						System.out.println("has annotation: ");
-						injectPresent = true;
 						field.setAccessible(true);
-						System.out.println("MAP: "+getGlobalBeansMap());
-						System.out.println("Annotation: "+getGlobalBeansMap().get(
-								field.getAnnotation(Inject.class)
-								.service()));
+						System.out.println("MAP: " + getGlobalBeansMap());
+						System.out.println("Annotation: "
+								+ getGlobalBeansMap().get(
+										field.getAnnotation(Inject.class)
+												.service()));
 						field.set(
 								obj,
 								getGlobalBeansMap().get(
@@ -112,10 +151,6 @@ public class CGLibProxyCreator<T> {
 				return proxy.invokeSuper(obj, args);
 			}
 		});
-//		if (injectPresent) {
-//			getGlobalInjectedMap().put(className.getSimpleName(),
-//					(T) enhancer.create());
-//		}
 		return (T) enhancer.create();
 	}
 
