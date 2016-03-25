@@ -2,6 +2,7 @@ package com.ioc.proxy;
 
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -11,14 +12,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.sf.cglib.proxy.CallbackFilter;
 import net.sf.cglib.proxy.Enhancer;
 import net.sf.cglib.proxy.MethodInterceptor;
 import net.sf.cglib.proxy.MethodProxy;
+import net.sf.cglib.proxy.NoOp;
 
 import com.ioc.ParseClasses;
 import com.ioc.annotations.Bean;
 import com.ioc.annotations.Inject;
 import com.ioc.annotations.Provided;
+import com.ioc.annotations.Singleton;
 
 public class CGLibProxyCreator<T> {
 
@@ -28,6 +32,7 @@ public class CGLibProxyCreator<T> {
 
 	static Map<String, Object> globalBeansMap = new HashMap<String, Object>();
 	static Map<String, Object> globalInjectedMap = new HashMap<String, Object>();
+	static Map<String, Object> globalSingletonMap = new HashMap<String, Object>();
 
 	ParseClasses parser;
 	ClassLoader contextClassLoader;
@@ -35,6 +40,141 @@ public class CGLibProxyCreator<T> {
 	public CGLibProxyCreator() {
 		parser = new ParseClasses();
 		contextClassLoader = Thread.currentThread().getContextClassLoader();
+	}
+
+	public void loadSingletons(String packageName) throws IOException,
+			ClassNotFoundException, InstantiationException,
+			IllegalAccessException, SecurityException, NoSuchFieldException, IllegalArgumentException, NoSuchMethodException, InvocationTargetException {
+		List<Class> classes = parser
+				.getClasses(contextClassLoader, packageName);
+		for (Class<?> className : classes) {
+			loadSingletonProxy(className);
+		}
+		for (Class<?> className : classes) {
+			if (className.isAnnotationPresent(Singleton.class)) {
+			System.out.println("-------------------------------------------------");
+			System.out.println("LOAD STEP 2 (class) "+className.getSimpleName());
+			System.out.println("Load Dependencies");
+			injectDependencies(className);
+			System.out.println("-------------------------------------------------");
+		}
+		}
+		for (Class<?> className : classes) {
+			if (className.isAnnotationPresent(Singleton.class)) {
+			System.out.println("Load Proxy Step 2");
+			createSingletonProxy(className, true);
+			System.out.println("-------------------------------------------------");
+			System.out.println("MAP: "+getGlobalSingletonMap());
+			System.out.println("-------------------------------------------------");
+		}}
+	}
+
+	private void loadSingletonProxy(Class<?> annotatedClass)
+			throws InstantiationException, IllegalAccessException,
+			ClassNotFoundException, SecurityException, NoSuchFieldException, IllegalArgumentException, NoSuchMethodException, InvocationTargetException {
+//		System.out.println("CLASS: " + annotatedClass);
+		Annotation[] annotations = annotatedClass.getAnnotations();
+		for (Annotation annotation : annotations) {
+			if (annotation instanceof Singleton) {
+				//System.out.println("Has annotation " + annotatedClass);
+				// TODO annotatedClass.newInstance() change to proxy
+				Object createSingletonProxy = createSingletonProxy(annotatedClass,false);
+				getGlobalSingletonMap().put(annotatedClass.getSimpleName(),
+						createSingletonProxy);
+				// injectDependencies(annotatedClass);
+				//System.out.println(getGlobalSingletonMap());
+			}
+		}
+		
+
+	}
+
+	@SuppressWarnings("unchecked")
+	public Object createSingletonProxy(Class<?> className, boolean secondLoad)
+			throws ClassNotFoundException, InstantiationException,
+			IllegalAccessException, SecurityException, NoSuchFieldException, NoSuchMethodException, IllegalArgumentException, InvocationTargetException {
+		System.out.println("CLASS: "+className);
+		Enhancer enhancer = new Enhancer();
+		enhancer.setSuperclass(className);
+		final Object newInstance = className.newInstance();
+		//System.out.println("Create singleton proxy ");
+		enhancer.setCallbackTypes(new Class[] { MethodInterceptor.class,
+				NoOp.class });
+		enhancer.setCallbackFilter(new CallbackFilter() {
+			/** ignores bridge methods */
+			public int accept(Method method) {
+				return method.isBridge() ? 1 : 0;
+			}
+		});
+//		Object newInstance2 = className.newInstance();
+		Constructor<?> constructor = className.getConstructor();
+		Object newInstance3 = constructor.newInstance();
+		
+		if(secondLoad){
+			
+		Field[] fields = className.getFields();
+		for(Field field: fields){
+			field.setAccessible(true);
+			Inject annotation = field.getAnnotation(Inject.class);
+//			System.out.println("annotation: "+annotation.service());
+//			System.out.println("field: "+field.getType());
+//			System.out.println("obj: "+newInstance2.toString());
+			field.set(newInstance3, getGlobalSingletonMap().get(annotation.service()));
+			Field field2 = newInstance3.getClass().getField(annotation.service());
+			
+			Class<?> type = field2.getType();
+			Object object = getGlobalSingletonMap().get(annotation.service());
+			System.out.println("FIELD SIMPLE NAME: "+type.getCanonicalName());
+			for(Field f: type.getFields()){
+				if(f.getType().equals(className)){
+					f.set(object, getGlobalSingletonMap().get(className.getSimpleName()));
+					Field field3 = object.getClass().getField(className.getSimpleName());
+					Class<?> type2 = field3.getType();
+					for(Field f2: type2.getFields()){
+						Object object2 = getGlobalSingletonMap().get(className.getSimpleName());
+					
+						if(f2.getType().getSimpleName().equals(annotation.service())){
+							f2.set(object2, getGlobalSingletonMap().get(annotation.service()));
+						}}
+				}
+				System.out.println("TYPEEEE "+f.getType());
+			}
+			field.set(newInstance3, getGlobalSingletonMap().get(annotation.service()));
+//			Field field3 = type.getClass().getField(className.getSimpleName());
+//			if(field3!=null){
+//				System.out.println("HAS Field");
+//			}
+			getGlobalSingletonMap().put(className.getSimpleName(), newInstance3);
+			System.out.println("MAP(createSingletonProxy2 UPDATED): "+getGlobalSingletonMap());
+		}
+		}
+		
+		return newInstance3;
+	}
+
+	public void injectDependencies(Class<?> className)
+			throws IllegalArgumentException, IllegalAccessException {
+		Field[] fields = className.getFields();
+		Object object = getGlobalSingletonMap().get(className.getSimpleName());
+		for (Field field : fields) {
+			if (field.isAnnotationPresent(Inject.class)) {
+				Inject annotation = field.getAnnotation(Inject.class);
+				System.out.println("annotation1: "+annotation.service());
+				System.out.println("field1: "+field.getType());
+				System.out.println("obj1: "+object.toString());
+//				System.out.println("Inject to class " + object);
+//				System.out.println("Field  " + field.getAnnotation(Inject.class));
+				field.set(
+						object,
+						getGlobalSingletonMap().get(
+								field.getAnnotation(Inject.class)));
+			}
+		}
+		
+		getGlobalBeansMap().put(className.getSimpleName(), object);
+		System.out.println("MAP(injectDependencies1): "+getGlobalSingletonMap());
+//		System.out.println("Final Map: "+getGlobalSingletonMap());
+		
 	}
 
 	public void loadInjectedClasses() throws IOException,
@@ -49,6 +189,14 @@ public class CGLibProxyCreator<T> {
 		}
 	}
 
+	private void loadInjectedProxy(Class<?> className)
+			throws ClassNotFoundException {
+		System.out.println("CLASS NAME: " + className.getName());
+		createProxy(className);
+		System.out.println("INJECTED MAP: " + getGlobalInjectedMap());
+
+	}
+
 	public void loadInjectedPackageClasses(String packageName)
 			throws IOException, ClassNotFoundException, InstantiationException,
 			IllegalAccessException {
@@ -57,14 +205,6 @@ public class CGLibProxyCreator<T> {
 		for (Class<?> className : classes) {
 			loadBeanProxy(className);
 		}
-	}
-
-	private void loadInjectedProxy(Class<?> className)
-			throws ClassNotFoundException {
-		System.out.println("CLASS NAME: " + className.getName());
-		createProxy(className);
-		System.out.println("INJECTED MAP: " + getGlobalInjectedMap());
-
 	}
 
 	public void loadBeanClasses() throws IOException, ClassNotFoundException,
@@ -79,15 +219,19 @@ public class CGLibProxyCreator<T> {
 	}
 
 	private void loadBeanProxy(Class<?> annotatedClass)
-			throws InstantiationException, IllegalAccessException {
+			throws InstantiationException, IllegalAccessException,
+			ClassNotFoundException {
 		Annotation[] annotations = annotatedClass.getAnnotations();
 		for (Annotation annotation : annotations) {
 			if (annotation instanceof Bean) {
 				String name = ((Bean) annotation).name();
 				System.out.println("Name: " + name);
 				// TODO annotatedClass.newInstance() change to proxy
-				getGlobalBeansMap().put(name, annotatedClass.newInstance());
+				T createProxy = createProxy(annotatedClass);
+				System.out.println("created proxy " + createProxy);
+				getGlobalBeansMap().put(name, createProxy);
 			}
+
 		}
 		System.out.println("Global map: " + globalBeansMap);
 	}
@@ -118,12 +262,12 @@ public class CGLibProxyCreator<T> {
 
 			}
 		}
-		System.out.println("Global map: " + globalBeansMap);
+		// System.out.println("Global map: " + globalBeansMap);
 	}
 
 	@SuppressWarnings("unchecked")
 	public T createProxy(Class<?> className) throws ClassNotFoundException {
-
+		System.out.println("create proxy " + className);
 		Enhancer enhancer = new Enhancer();
 		enhancer.setSuperclass(className);
 		enhancer.setCallback(new MethodInterceptor() {
@@ -131,28 +275,40 @@ public class CGLibProxyCreator<T> {
 			public Object intercept(Object obj, Method method, Object[] args,
 					MethodProxy proxy) throws Throwable {
 				Field[] fields = obj.getClass().getFields();
+				System.out.println("in fields");
 				for (Field field : fields) {
-					System.out.println("FIELD: " + field.getType());
 					if (field.isAnnotationPresent(Inject.class)) {
-						System.out.println("has annotation: ");
+
 						field.setAccessible(true);
-						System.out.println("MAP: " + getGlobalBeansMap());
-						System.out.println("Annotation: "
-								+ getGlobalBeansMap().get(
-										field.getAnnotation(Inject.class)
-												.service()));
 						field.set(
 								obj,
 								getGlobalBeansMap().get(
 										field.getAnnotation(Inject.class)
 												.service()));
 					}
+
 				}
 				return proxy.invokeSuper(obj, args);
 			}
 		});
 		return (T) enhancer.create();
 	}
+
+//	@SuppressWarnings("unchecked")
+//	public T createSingleProxy(final Class<?> className)
+//			throws ClassNotFoundException {
+//		System.out.println("create proxy single " + className);
+//		Enhancer enhancer = new Enhancer();
+//		enhancer.setSuperclass(className);
+//		enhancer.setCallback(new FixedValue() {
+//
+//			public Object loadObject() throws Exception {
+//				// TODO Auto-generated method stub
+//				return className.newInstance();
+//			}
+//		});
+//		return (T) enhancer.create();
+//	}
 
 	public static Map<String, Object> getGlobalBeansMap() {
 		return globalBeansMap;
@@ -169,6 +325,15 @@ public class CGLibProxyCreator<T> {
 	public static void setGlobalInjectedMap(
 			Map<String, Object> globalInjectedMap) {
 		CGLibProxyCreator.globalInjectedMap = globalInjectedMap;
+	}
+
+	public static Map<String, Object> getGlobalSingletonMap() {
+		return globalSingletonMap;
+	}
+
+	public static void setGlobalSingletonMap(
+			Map<String, Object> globalSingletonMap) {
+		CGLibProxyCreator.globalSingletonMap = globalSingletonMap;
 	}
 
 }

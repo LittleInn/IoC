@@ -11,9 +11,11 @@ public class AnnotationApplicationContext {
 	public AnnotationApplicationContext() {
 		 cglibCreator = new CGLibProxyCreator();
 	}
-	public void register(String packageName) throws ClassNotFoundException, InstantiationException, IllegalAccessException, IOException, IllegalArgumentException, InvocationTargetException{
-		cglibCreator.loadInjectedPackageClasses(packageName);
-		cglibCreator.loadProvidedPackageClass(packageName);
+	public void register(String packageName) throws ClassNotFoundException, InstantiationException, IllegalAccessException, IOException, IllegalArgumentException, InvocationTargetException, SecurityException, NoSuchFieldException, NoSuchMethodException{
+//		cglibCreator.loadInjectedPackageClasses(packageName);
+		//cglibCreator.loadBeanClasses();
+//		cglibCreator.loadProvidedPackageClass(packageName);
+		cglibCreator.loadSingletons(packageName);
 	}
 	public void register(Class<?> ... classes){
 		
@@ -24,6 +26,7 @@ public class AnnotationApplicationContext {
 	}
 	
 	public Object getBean(String beanName){
-		return cglibCreator.getGlobalBeansMap().get(beanName);
+		return cglibCreator.getGlobalSingletonMap().get(beanName);
+//		return cglibCreator.getGlobalBeansMap().get(beanName);
 	}
 }
