@@ -7,23 +7,30 @@ import com.ioc.proxy.CGLibProxyCreator;
 
 public class AnnotationApplicationContext {
 	private CGLibProxyCreator cglibCreator;
-	
+
 	public AnnotationApplicationContext() {
-		 cglibCreator = new CGLibProxyCreator();
+		cglibCreator = new CGLibProxyCreator();
 	}
-	public void register(String packageName) throws ClassNotFoundException, InstantiationException, IllegalAccessException, IOException, IllegalArgumentException, InvocationTargetException{
-		cglibCreator.loadInjectedPackageClasses(packageName);
+
+	public void register(String packageName) throws ClassNotFoundException,
+			InstantiationException, IllegalAccessException, IOException,
+			IllegalArgumentException, InvocationTargetException, SecurityException, NoSuchFieldException, NoSuchMethodException {
+		cglibCreator.loadSingletons(packageName);
+		cglibCreator.loadBeanClasses();
 		cglibCreator.loadProvidedPackageClass(packageName);
 	}
-	public void register(Class<?> ... classes){
-		
+
+	public void register(Class<?>... classes) {
+
 	}
-	private void loadProxies() throws ClassNotFoundException, InstantiationException, IllegalAccessException, IOException{
+
+	private void loadProxies() throws ClassNotFoundException,
+			InstantiationException, IllegalAccessException, IOException {
 		cglibCreator.loadBeanClasses();
 		cglibCreator.loadInjectedClasses();
 	}
-	
-	public Object getBean(String beanName){
+
+	public Object getBean(String beanName) {
 		return cglibCreator.getGlobalBeansMap().get(beanName);
 	}
 }
